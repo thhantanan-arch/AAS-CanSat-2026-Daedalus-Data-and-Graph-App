@@ -8,6 +8,7 @@ import tempfile
 import zipfile
 import hashlib
 import json
+import time
 from pathlib import Path
 from io import BytesIO
 
@@ -69,6 +70,7 @@ st.markdown(
     }
     .stButton button, .stDownloadButton button { min-height: 3rem; border-radius: 14px; font-weight: 700; }
     .metric-card { padding: 0.65rem 0.8rem; border-radius: 14px; background: rgba(241,245,249,0.78); border: 1px solid rgba(148,163,184,0.25); }
+    .replay-card { padding: 0.8rem 0.9rem; border-radius: 18px; border: 1px solid rgba(248,113,113,0.35); background: rgba(255,247,247,0.72); margin: 0.4rem 0 0.8rem 0; }
     @media (max-width: 760px) {
         .block-container { padding-left: 0.55rem; padding-right: 0.55rem; }
         .cfds-hero { border-radius: 16px; padding: 0.85rem; }
@@ -628,6 +630,213 @@ def make_folder_zips(output_dir: Path) -> dict[str, bytes]:
     return result
 
 
+
+def _numeric_series(df, names: list[str]):
+    """Return the first numeric column found from a list of candidate names."""
+    for name in names:
+        if name in df.columns:
+            try:
+                return name, __import__("pandas").to_numeric(df[name], errors="coerce")
+            except Exception:
+                continue
+    return None, None
+
+
+def _replay_dataframe_from_payload(payload: dict):
+    """Load the normalized CSV stored in the export payload for Flight Replay."""
+    csv_bytes = payload.get("normalized_csv") or b""
+    if not csv_bytes:
+        return None, "No normalized CSV found. Generate graphs first, then open Flight Replay."
+    try:
+        import pandas as pd
+        df = pd.read_csv(BytesIO(csv_bytes))
+    except Exception as exc:
+        return None, f"Could not read normalized CSV for replay: {exc}"
+
+    if df.empty:
+        return None, "Normalized CSV is empty."
+
+    # Stable mission-time axis for replay. Prefer T_REL from the normalizer;
+    # fall back to PACKET_COUNT/5 Hz; then row index.
+    if "T_REL" in df.columns:
+        t = pd.to_numeric(df["T_REL"], errors="coerce")
+    elif "PACKET_COUNT" in df.columns:
+        t = pd.to_numeric(df["PACKET_COUNT"], errors="coerce") / 5.0
+        t = t - t.min(skipna=True)
+    else:
+        t = pd.Series(range(len(df)), dtype="float")
+    t = t.fillna(method="ffill").fillna(0.0)
+    t = t - t.min(skipna=True)
+    df = df.copy()
+    df["__REPLAY_TIME_S"] = t
+    return df, ""
+
+
+def _downsample_for_replay(df, max_points: int):
+    """Downsample by index for phone-friendly replay without changing the original export."""
+    if len(df) <= max_points:
+        return df.reset_index(drop=True)
+    step = max(1, int(len(df) / max_points))
+    sampled = df.iloc[::step].copy()
+    if sampled.index[-1] != df.index[-1]:
+        sampled = __import__("pandas").concat([sampled, df.tail(1)], ignore_index=False)
+    return sampled.reset_index(drop=True)
+
+
+def _replay_plot_data(df, graph_type: str):
+    """Choose columns and display labels for the selected replay graph."""
+    import pandas as pd
+    graph_map = {
+        "Altitude": (["ALTITUDE", "ALT", "ALTITUDE_M"], "Altitude (m)"),
+        "Velocity / Descent rate": (["DESCENT_RATE_DERIVED", "VELOCITY_DERIVED", "VELOCITY"], "Velocity / descent rate"),
+        "Voltage": (["VOLTAGE", "VBATT", "BATTERY_VOLTAGE"], "Voltage (V)"),
+        "Temperature": (["TEMPERATURE", "TEMP", "TEMP_C"], "Temperature (°C)"),
+        "Pressure": (["PRESSURE", "PRES", "BARO_PRESSURE"], "Pressure"),
+        "Current": (["CURRENT", "CURR", "BATTERY_CURRENT"], "Current (A)"),
+        "GPS altitude": (["GPS_ALT", "GNSS_ALT", "GPS_ALTITUDE"], "GPS altitude (m)"),
+    }
+    if graph_type == "Motion magnitude":
+        candidates = [
+            (["ACCEL_R", "ACCEL_P", "ACCEL_Y"], "Acceleration magnitude"),
+            (["GYRO_R", "GYRO_P", "GYRO_Y"], "Gyro magnitude"),
+        ]
+        for cols, label in candidates:
+            if all(c in df.columns for c in cols):
+                x = pd.to_numeric(df[cols[0]], errors="coerce")
+                y = pd.to_numeric(df[cols[1]], errors="coerce")
+                z = pd.to_numeric(df[cols[2]], errors="coerce")
+                return pd.DataFrame({"Mission time (s)": df["__REPLAY_TIME_S"], label: (x*x + y*y + z*z) ** 0.5}), label
+        return None, "No acceleration/gyro XYZ columns found."
+
+    if graph_type not in graph_map:
+        return None, "Unsupported replay graph."
+    col, y = _numeric_series(df, graph_map[graph_type][0])
+    if col is None:
+        return None, f"No usable column found for {graph_type}."
+    label = graph_map[graph_type][1]
+    return pd.DataFrame({"Mission time (s)": df["__REPLAY_TIME_S"], label: y}), label
+
+
+def render_flight_replay(payload: dict, mobile_fast: bool = True) -> None:
+    """Phone-friendly log replay.
+
+    This is not sensor live telemetry. It replays an uploaded/normalized flight log
+    so the user can scrub or play the mission like a playback timeline on iPhone.
+    """
+    st.subheader("🎞️ Flight Replay")
+    st.caption("Replay the uploaded log like mission playback. This uses the normalized CSV saved from the last generation.")
+
+    df, err = _replay_dataframe_from_payload(payload)
+    if err:
+        st.info(err)
+        return
+
+    max_points_default = 280 if mobile_fast else 650
+    with st.expander("Replay settings", expanded=True):
+        c1, c2 = st.columns(2)
+        with c1:
+            graph_type = st.radio(
+                "Replay graph",
+                ["Altitude", "Velocity / Descent rate", "Voltage", "Temperature", "Pressure", "Current", "GPS altitude", "Motion magnitude", "GPS path"],
+                index=0,
+                horizontal=False,
+                key="replay_graph_type",
+            )
+        with c2:
+            speed = st.radio("Speed", ["1x", "2x", "5x", "10x"], index=2 if mobile_fast else 1, horizontal=True, key="replay_speed")
+            trail_mode = st.radio("Trail", ["Full trail", "Last 10 s", "Last 30 s", "Last 60 s"], index=0, key="replay_trail")
+            max_points = st.slider("Replay smoothness", min_value=80, max_value=900, value=max_points_default, step=20, help="Higher = smoother but heavier on iPhone.", key="replay_max_points")
+
+    replay_df = _downsample_for_replay(df, max_points)
+    if replay_df.empty:
+        st.warning("No replay data after downsampling.")
+        return
+
+    total_frames = len(replay_df)
+    if "replay_frame" not in st.session_state:
+        st.session_state["replay_frame"] = 0
+    st.session_state["replay_frame"] = min(max(0, int(st.session_state["replay_frame"])), total_frames - 1)
+
+    frame = st.slider(
+        "Mission timeline",
+        min_value=0,
+        max_value=total_frames - 1,
+        value=st.session_state["replay_frame"],
+        step=1,
+        key="replay_timeline_slider",
+        help="Scrub the flight manually. Press Play to animate from this frame.",
+    )
+    st.session_state["replay_frame"] = frame
+
+    controls = st.columns(3)
+    play = controls[0].button("▶ Play", use_container_width=True, key="replay_play_btn")
+    reset = controls[1].button("↺ Reset", use_container_width=True, key="replay_reset_btn")
+    jump_end = controls[2].button("⏭ End", use_container_width=True, key="replay_end_btn")
+    if reset:
+        st.session_state["replay_frame"] = 0
+        st.rerun()
+    if jump_end:
+        st.session_state["replay_frame"] = total_frames - 1
+        st.rerun()
+
+    status = st.empty()
+    chart_slot = st.empty()
+
+    def _windowed(sub):
+        if trail_mode == "Full trail" or sub.empty:
+            return sub
+        seconds = float(trail_mode.split()[1])
+        t_now = float(sub["__REPLAY_TIME_S"].iloc[-1]) if "__REPLAY_TIME_S" in sub.columns else 0.0
+        return sub[sub["__REPLAY_TIME_S"] >= t_now - seconds]
+
+    def _render_one(frame_idx: int):
+        frame_idx = min(max(0, int(frame_idx)), total_frames - 1)
+        sub = replay_df.iloc[: frame_idx + 1].copy()
+        t_now = float(sub["__REPLAY_TIME_S"].iloc[-1])
+        status.markdown(f"**Replay time:** {t_now:.1f} s / {float(replay_df['__REPLAY_TIME_S'].iloc[-1]):.1f} s · **Frame:** {frame_idx + 1}/{total_frames}")
+
+        if graph_type == "GPS path":
+            import pandas as pd
+            lat_col, lat = _numeric_series(sub, ["GPS_LAT", "LAT", "LATITUDE"])
+            lon_col, lon = _numeric_series(sub, ["GPS_LON", "LON", "LONGITUDE"])
+            if lat_col is None or lon_col is None:
+                chart_slot.info("No GPS latitude/longitude columns found for path replay.")
+                return
+            gps = pd.DataFrame({"lat": lat, "lon": lon}).dropna()
+            # Filter common invalid placeholders.
+            gps = gps[(gps["lat"].abs() > 0.0001) & (gps["lon"].abs() > 0.0001)]
+            if gps.empty:
+                chart_slot.info("GPS path has no valid coordinates yet at this frame.")
+                return
+            chart_slot.map(gps, use_container_width=True)
+            return
+
+        plot_df, label = _replay_plot_data(sub, graph_type)
+        if plot_df is None:
+            chart_slot.info(label)
+            return
+        plot_df = plot_df.dropna()
+        if plot_df.empty:
+            chart_slot.info("No numeric data available yet for this replay frame.")
+            return
+        plot_df = plot_df.rename(columns={"Mission time (s)": "time_s"}).set_index("time_s")
+        chart_slot.line_chart(plot_df, use_container_width=True)
+
+    _render_one(st.session_state["replay_frame"])
+
+    if play:
+        speed_factor = int(speed.replace("x", ""))
+        # Avoid too many rerenders on phones/cloud. 65 frames per click gives a
+        # replay feel without locking the page for too long.
+        frame_step = max(1, speed_factor)
+        delay = 0.16 if mobile_fast else 0.11
+        end_frame = min(total_frames - 1, st.session_state["replay_frame"] + 65 * frame_step)
+        for frame_idx in range(st.session_state["replay_frame"], end_frame + 1, frame_step):
+            _render_one(frame_idx)
+            st.session_state["replay_frame"] = frame_idx
+            time.sleep(delay)
+        st.caption("Playback chunk finished. Tap ▶ Play again to continue, or scrub the timeline.")
+
 def quick_data_diagnostics(input_path: Path) -> dict:
     try:
         import pandas as pd
@@ -811,6 +1020,7 @@ if start:
 
 if st.session_state.get("cfds_last_export") is not None:
     show_previews_from_payload(st.session_state["cfds_last_export"], max_preview, show_full_png, show_all_folders)
+    render_flight_replay(st.session_state["cfds_last_export"], mobile_fast=mobile_fast)
     show_export_center(st.session_state["cfds_last_export"])
 
 st.divider()
