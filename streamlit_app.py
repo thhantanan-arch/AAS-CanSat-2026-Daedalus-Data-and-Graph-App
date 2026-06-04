@@ -9,6 +9,7 @@ import zipfile
 import hashlib
 import json
 from pathlib import Path
+from io import BytesIO
 
 import streamlit as st
 
@@ -156,6 +157,27 @@ def _download_kwargs(key: str) -> dict:
     return {"key": key, "on_click": "ignore"}
 
 
+
+
+def _safe_radio_choice(label: str, options: list[str], key: str, index: int = 0, help_text: str | None = None) -> str | None:
+    """iPhone-safe selector.
+
+    Streamlit selectbox is searchable and on iPhone it can leave typed filter text
+    in the field with a red/invalid border. Radio buttons are less compact but
+    they are tap-only, so the value cannot desync from the visible label.
+    """
+    if not options:
+        return None
+    index = max(0, min(index, len(options) - 1))
+    return st.radio(
+        label,
+        options,
+        index=index,
+        key=key,
+        horizontal=False,
+        help=help_text,
+    )
+
 def show_export_center(payload: dict) -> None:
     st.subheader("Export center")
     st.caption("Use these buttons directly in the web app. On iPhone, downloaded files go to Files/Downloads.")
@@ -232,12 +254,14 @@ def show_export_center(payload: dict) -> None:
             previous = st.session_state.get("export_graph_folder", folder_names[0])
             if previous not in folder_names:
                 previous = folder_names[0]
-            selected_folder = st.selectbox(
+            selected_folder = _safe_radio_choice(
                 "Choose graph folder",
                 folder_names,
+                key="export_graph_folder_radio",
                 index=folder_names.index(previous),
-                key="export_graph_folder",
+                help_text="Tap one folder. This avoids the searchable selectbox state bug on iPhone.",
             )
+            st.session_state["export_graph_folder"] = selected_folder
 
             if selected_folder in folder_zips:
                 folder_file_name = "CFDS_" + selected_folder.replace("/", "_").replace("\\", "_") + "_png.zip"
@@ -270,11 +294,12 @@ def show_export_center(payload: dict) -> None:
             else:
                 png_labels = [rel_name for rel_name, _ in folder_pngs]
                 png_key = "export_individual_png_selector_" + hashlib.sha1(selected_folder.encode("utf-8")).hexdigest()[:10]
-                selected_png = st.selectbox(
+                selected_png = _safe_radio_choice(
                     f"Choose PNG ({len(folder_pngs)} in this folder)",
                     png_labels,
                     index=0,
-                    key=png_key,
+                    key=png_key + "_radio",
+                    help_text="Tap one PNG from the selected folder.",
                 )
                 png_lookup = dict(folder_pngs)
                 st.download_button(
@@ -400,7 +425,13 @@ def show_previews(output_dir: Path, max_images: int, show_full_png: bool, show_a
 
     with tab_folder:
         labels = [_folder_label(folder, output_dir, folder_counts[folder]) for folder in folders]
-        selected_label = st.selectbox("Choose graph folder", labels, index=0)
+        selected_label = _safe_radio_choice(
+            "Choose graph folder",
+            labels,
+            index=0,
+            key="preview_graph_folder_radio",
+            help_text="Tap-only folder picker for iPhone stability.",
+        )
         selected_folder = folders[labels.index(selected_label)]
         folder_files = sorted([p for p in png_files if p.parent == selected_folder], key=lambda p: p.name)
 
@@ -437,6 +468,117 @@ def show_previews(output_dir: Path, max_images: int, show_full_png: bool, show_a
                 st.markdown(f"**{folder.relative_to(output_dir)}** — {folder_counts[folder]} images")
 
 
+
+
+def _score_preview_name(rel_name: str) -> tuple[int, str]:
+    name = Path(rel_name).name.lower()
+    rel = rel_name.lower()
+    if "altitude" in name or "01_alt" in rel:
+        return (0, name)
+    if "velocity" in name or "02_vel" in rel:
+        return (1, name)
+    if "conops" in name or "06_conops" in rel:
+        return (2, name)
+    if "voltage" in name or "temperature" in name or "03_vt" in rel:
+        return (3, name)
+    if "gps" in name or "04_gps" in rel:
+        return (4, name)
+    return (5, name)
+
+
+def _preview_image_bytes(png_bytes: bytes, show_full_png: bool, max_width: int = 900) -> bytes:
+    """Return stable in-memory bytes for Streamlit image rendering.
+
+    Important: Streamlit reruns the script after widget changes. The graph files are
+    generated in a TemporaryDirectory that disappears after the generation run, so
+    preview images must come from session-state bytes, not from local temp paths.
+    """
+    if show_full_png:
+        return png_bytes
+    try:
+        from PIL import Image
+        img = Image.open(BytesIO(png_bytes))
+        img.thumbnail((max_width, max_width * 3))
+        if img.mode in ("RGBA", "LA"):
+            bg = Image.new("RGB", img.size, "white")
+            bg.paste(img, mask=img.getchannel("A"))
+            img = bg
+        else:
+            img = img.convert("RGB")
+        out = BytesIO()
+        img.save(out, "JPEG", quality=72, optimize=True)
+        return out.getvalue()
+    except Exception:
+        return png_bytes
+
+
+def show_previews_from_payload(payload: dict, max_images: int, show_full_png: bool, show_all_folders: bool) -> None:
+    """Render preview images from cached bytes so folder switching works after reruns."""
+    png_items = payload.get("individual_pngs", []) or []
+    if not png_items:
+        st.warning("No PNG previews are available in the cached export. Try generating graphs again.")
+        return
+
+    png_items = sorted(png_items, key=lambda item: _score_preview_name(item[0]))
+    by_folder: dict[str, list[tuple[str, bytes]]] = {}
+    for rel_name, data in png_items:
+        folder_name = str(Path(rel_name).parent).replace("\\", "/")
+        if folder_name in ["", "."]:
+            folder_name = "root"
+        by_folder.setdefault(folder_name, []).append((rel_name, data))
+
+    st.subheader("Preview browser")
+    st.caption(
+        f"Generated {len(png_items)} PNG files. These previews are rendered from session memory, "
+        "so they remain visible after changing folders on iPhone."
+    )
+
+    tab_fast, tab_folder = st.tabs(["⚡ Fast preview", "📁 Folder browser"])
+
+    with tab_fast:
+        visible = png_items[:max_images]
+        st.caption(f"Showing {len(visible)} of {len(png_items)} PNG files.")
+        for rel_name, data in visible:
+            st.image(BytesIO(_preview_image_bytes(data, show_full_png)), caption=rel_name, use_container_width=True)
+
+    with tab_folder:
+        folders = sorted(by_folder.keys())
+        folder_labels = [f"{folder}  ({len(by_folder[folder])})" for folder in folders]
+        current_folder = st.session_state.get("preview_selected_folder", folders[0])
+        if current_folder not in folders:
+            current_folder = folders[0]
+        selected_label = _safe_radio_choice(
+            "Choose graph folder",
+            folder_labels,
+            index=folders.index(current_folder),
+            key="preview_graph_folder_radio_memory",
+            help_text="Tap-only folder picker. Images are loaded from cached bytes, not deleted temp files.",
+        )
+        selected_folder = folders[folder_labels.index(selected_label)]
+        st.session_state["preview_selected_folder"] = selected_folder
+
+        folder_files = sorted(by_folder[selected_folder], key=lambda item: item[0])
+        if len(folder_files) <= 1:
+            folder_limit = len(folder_files)
+        else:
+            safe_key = hashlib.sha1(selected_folder.encode("utf-8")).hexdigest()[:10]
+            default_limit = min(len(folder_files), 12)
+            folder_limit = st.slider(
+                "Images from this folder",
+                min_value=1,
+                max_value=len(folder_files),
+                value=default_limit,
+                step=1,
+                key=f"folder_preview_limit_memory_{safe_key}",
+            )
+        st.caption(f"Showing {folder_limit} of {len(folder_files)} images in {selected_folder}")
+        for rel_name, data in folder_files[:folder_limit]:
+            st.image(BytesIO(_preview_image_bytes(data, show_full_png)), caption=Path(rel_name).name, use_container_width=True)
+
+    if show_all_folders:
+        with st.expander("Folder summary", expanded=False):
+            for folder in sorted(by_folder.keys()):
+                st.markdown(f"**{folder}** — {len(by_folder[folder])} images")
 
 
 def make_file_hash(path: Path) -> str:
@@ -634,7 +776,6 @@ if start:
             st.success("Graph generation completed.")
 
         show_report(output_dir)
-        show_previews(output_dir, max_preview, show_full_png, show_all_folders)
 
         if code != 0 or show_logs_when_success:
             with st.expander("Worker logs", expanded=code != 0):
@@ -645,6 +786,7 @@ if start:
         progress.progress(100, text="Done")
 
 if st.session_state.get("cfds_last_export") is not None:
+    show_previews_from_payload(st.session_state["cfds_last_export"], max_preview, show_full_png, show_all_folders)
     show_export_center(st.session_state["cfds_last_export"])
 
 st.divider()
