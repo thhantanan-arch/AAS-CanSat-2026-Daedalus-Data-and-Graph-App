@@ -665,7 +665,7 @@ def _replay_dataframe_from_payload(payload: dict):
         t = t - t.min(skipna=True)
     else:
         t = pd.Series(range(len(df)), dtype="float")
-    t = t.fillna(method="ffill").fillna(0.0)
+    t = t.ffill().fillna(0.0)
     t = t - t.min(skipna=True)
     df = df.copy()
     df["__REPLAY_TIME_S"] = t
