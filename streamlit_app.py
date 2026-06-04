@@ -211,45 +211,80 @@ def show_export_center(payload: dict) -> None:
         )
 
     folder_zips = payload.get("folder_zips", {})
-    if folder_zips:
-        st.markdown("### Folder ZIP download")
-        st.caption("iPhone-safe selector: this avoids expander state resets when switching folders.")
-        folder_names = list(folder_zips.keys())
-        selected_folder_zip = st.selectbox(
-            "Choose graph folder",
-            folder_names,
-            index=0,
-            key="export_folder_zip_selector",
-        )
-        folder_file_name = "CFDS_" + selected_folder_zip.replace("/", "_").replace("\\", "_") + "_png.zip"
-        st.download_button(
-            f"⬇️ Download selected folder ZIP: {selected_folder_zip}",
-            data=folder_zips[selected_folder_zip],
-            file_name=folder_file_name,
-            mime="application/zip",
-            use_container_width=True,
-            **_download_kwargs("dl_selected_folder_zip"),
-        )
-
     individual_pngs = payload.get("individual_pngs", [])
-    if individual_pngs:
-        st.markdown("### Individual PNG download")
-        png_labels = [rel_name for rel_name, _ in individual_pngs]
-        selected_png = st.selectbox(
-            f"Choose PNG ({len(individual_pngs)} available)",
-            png_labels,
-            index=0,
-            key="export_individual_png_selector",
-        )
-        png_lookup = dict(individual_pngs)
-        st.download_button(
-            f"⬇️ Download PNG: {Path(selected_png).name}",
-            data=png_lookup[selected_png],
-            file_name=Path(selected_png).name,
-            mime="image/png",
-            use_container_width=True,
-            **_download_kwargs("dl_selected_individual_png"),
-        )
+
+    # Export browser: one folder selector controls both folder ZIP and PNG list.
+    # This is more stable on iPhone than two independent widgets, and it prevents
+    # the PNG selector from showing stale files after the selected folder changes.
+    if folder_zips or individual_pngs:
+        st.markdown("### Graph export browser")
+        st.caption("Choose one graph folder, then download that folder ZIP or one PNG from that same folder.")
+
+        png_by_folder: dict[str, list[tuple[str, bytes]]] = {}
+        for rel_name, data in individual_pngs:
+            folder_name = str(Path(rel_name).parent).replace("\\", "/")
+            if folder_name in ["", "."]:
+                folder_name = "root"
+            png_by_folder.setdefault(folder_name, []).append((rel_name, data))
+
+        folder_names = sorted(set(folder_zips.keys()) | set(png_by_folder.keys()))
+        if folder_names:
+            previous = st.session_state.get("export_graph_folder", folder_names[0])
+            if previous not in folder_names:
+                previous = folder_names[0]
+            selected_folder = st.selectbox(
+                "Choose graph folder",
+                folder_names,
+                index=folder_names.index(previous),
+                key="export_graph_folder",
+            )
+
+            if selected_folder in folder_zips:
+                folder_file_name = "CFDS_" + selected_folder.replace("/", "_").replace("\\", "_") + "_png.zip"
+                st.download_button(
+                    f"⬇️ Download selected folder ZIP: {selected_folder}",
+                    data=folder_zips[selected_folder],
+                    file_name=folder_file_name,
+                    mime="application/zip",
+                    use_container_width=True,
+                    **_download_kwargs(f"dl_folder_zip_{hashlib.sha1(selected_folder.encode('utf-8')).hexdigest()[:10]}"),
+                )
+            else:
+                st.info("This folder has PNG files, but no folder ZIP was packed for it.")
+
+            folder_pngs = sorted(png_by_folder.get(selected_folder, []), key=lambda item: item[0])
+            st.markdown("### Individual PNG download")
+            if not folder_pngs:
+                st.info("No individual PNG found in this folder.")
+            elif len(folder_pngs) == 1:
+                rel_name, data = folder_pngs[0]
+                st.caption(f"1 PNG available in {selected_folder}")
+                st.download_button(
+                    f"⬇️ Download PNG: {Path(rel_name).name}",
+                    data=data,
+                    file_name=Path(rel_name).name,
+                    mime="image/png",
+                    use_container_width=True,
+                    **_download_kwargs(f"dl_png_single_{hashlib.sha1(rel_name.encode('utf-8')).hexdigest()[:10]}"),
+                )
+            else:
+                png_labels = [rel_name for rel_name, _ in folder_pngs]
+                png_key = "export_individual_png_selector_" + hashlib.sha1(selected_folder.encode("utf-8")).hexdigest()[:10]
+                selected_png = st.selectbox(
+                    f"Choose PNG ({len(folder_pngs)} in this folder)",
+                    png_labels,
+                    index=0,
+                    key=png_key,
+                )
+                png_lookup = dict(folder_pngs)
+                st.download_button(
+                    f"⬇️ Download PNG: {Path(selected_png).name}",
+                    data=png_lookup[selected_png],
+                    file_name=Path(selected_png).name,
+                    mime="image/png",
+                    use_container_width=True,
+                    **_download_kwargs(f"dl_png_{hashlib.sha1(selected_png.encode('utf-8')).hexdigest()[:10]}"),
+                )
 
 
 def run_worker(input_path: Path, output_dir: Path, mode: str, speed: str, families: list[str]) -> tuple[int, str]:
