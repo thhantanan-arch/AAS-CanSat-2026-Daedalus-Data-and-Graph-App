@@ -50,31 +50,184 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .block-container { padding-top: 0.75rem; padding-bottom: 1.5rem; max-width: 1180px; }
-    div[data-testid="stSidebar"] { min-width: 250px; }
+    :root {
+        --cfds-bg: #06111f;
+        --cfds-panel: #071a2e;
+        --cfds-panel2: #0a2238;
+        --cfds-card: #0d2a45;
+        --cfds-card2: #0b2136;
+        --cfds-text: #ecfeff;
+        --cfds-muted: #9fb8c9;
+        --cfds-accent: #38d5ff;
+        --cfds-accent2: #7c5cff;
+        --cfds-good: #22c55e;
+        --cfds-warn: #facc15;
+        --cfds-danger: #fb7185;
+        --cfds-border: rgba(150,255,245,0.16);
+        --cfds-shadow: 0 18px 45px rgba(0,0,0,0.34);
+    }
+    html, body, [data-testid="stAppViewContainer"], .stApp {
+        background:
+          radial-gradient(circle at 12% 0%, rgba(56,213,255,.16), transparent 32%),
+          radial-gradient(circle at 88% 0%, rgba(124,92,255,.16), transparent 34%),
+          linear-gradient(180deg, #050b12 0%, #06111f 44%, #071827 100%) !important;
+        color: var(--cfds-text) !important;
+    }
+    [data-testid="stHeader"] { background: rgba(5,11,18,.18); backdrop-filter: blur(12px); }
+    .block-container {
+        padding-top: 0.75rem;
+        padding-bottom: 2.2rem;
+        max-width: 1260px;
+    }
+    section[data-testid="stSidebar"] {
+        background: linear-gradient(180deg, rgba(7,26,46,.98), rgba(5,11,18,.96)) !important;
+        border-right: 1px solid var(--cfds-border);
+    }
+    section[data-testid="stSidebar"] * { color: var(--cfds-text); }
+    div[data-testid="stSidebar"] { min-width: 285px; }
     .cfds-hero {
-        padding: 0.95rem 1rem;
-        border-radius: 20px;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        background: linear-gradient(135deg, rgba(15,23,42,0.96), rgba(30,64,175,0.88));
-        color: white;
-        margin-bottom: 0.75rem;
+        position: relative;
+        overflow: hidden;
+        padding: 1.05rem 1.1rem 1rem;
+        border-radius: 22px;
+        border: 1px solid var(--cfds-border);
+        background:
+          linear-gradient(135deg, rgba(7,26,46,.96), rgba(13,42,69,.92)),
+          repeating-linear-gradient(90deg, rgba(56,213,255,.05) 0 1px, transparent 1px 64px);
+        color: var(--cfds-text);
+        margin-bottom: 0.9rem;
+        box-shadow: var(--cfds-shadow);
     }
-    .cfds-hero h1 { margin: 0; font-size: clamp(1.45rem, 4vw, 2.1rem); }
-    .cfds-hero p { opacity: 0.86; margin: 0.3rem 0 0 0; }
-    .cfds-card {
-        padding: 0.8rem 0.9rem;
+    .cfds-hero:before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, rgba(56,213,255,.24), transparent 18%, transparent 80%, rgba(124,92,255,.22));
+        pointer-events: none;
+    }
+    .cfds-kicker {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .45rem;
+        align-items: center;
+        margin-bottom: .55rem;
+    }
+    .cfds-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .28rem .58rem;
+        border-radius: 999px;
+        border: 1px solid rgba(56,213,255,.32);
+        background: rgba(56,213,255,.09);
+        color: var(--cfds-accent);
+        font-size: .78rem;
+        font-weight: 800;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+    }
+    .cfds-hero h1 {
+        position: relative;
+        margin: 0;
+        font-size: clamp(1.58rem, 4.8vw, 2.55rem);
+        line-height: 1.05;
+        letter-spacing: .055em;
+        font-weight: 950;
+        text-transform: uppercase;
+    }
+    .cfds-hero p {
+        position: relative;
+        opacity: 0.88;
+        margin: .48rem 0 0 0;
+        color: var(--cfds-muted);
+        font-weight: 600;
+    }
+    .cfds-card, .replay-card, div[data-testid="stExpander"] details {
+        padding: 0.85rem 0.95rem;
+        border-radius: 18px;
+        border: 1px solid var(--cfds-border) !important;
+        background: linear-gradient(180deg, rgba(10,34,56,.82), rgba(7,26,46,.72)) !important;
+        color: var(--cfds-text);
+        box-shadow: 0 12px 32px rgba(0,0,0,.18);
+    }
+    .metric-card {
+        padding: 0.75rem 0.85rem;
         border-radius: 16px;
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        background: rgba(248, 250, 252, 0.72);
+        background: linear-gradient(180deg, rgba(13,42,69,.82), rgba(10,34,56,.64));
+        border: 1px solid var(--cfds-border);
+        color: var(--cfds-text);
     }
-    .stButton button, .stDownloadButton button { min-height: 3rem; border-radius: 14px; font-weight: 700; }
-    .metric-card { padding: 0.65rem 0.8rem; border-radius: 14px; background: rgba(241,245,249,0.78); border: 1px solid rgba(148,163,184,0.25); }
-    .replay-card { padding: 0.8rem 0.9rem; border-radius: 18px; border: 1px solid rgba(248,113,113,0.35); background: rgba(255,247,247,0.72); margin: 0.4rem 0 0.8rem 0; }
+    h1, h2, h3, h4, h5, h6, label, p, span, div { color: inherit; }
+    h2, h3 { letter-spacing: .02em; }
+    .stButton button, .stDownloadButton button {
+        min-height: 3rem;
+        border-radius: 14px !important;
+        font-weight: 850 !important;
+        border: 1px solid var(--cfds-border) !important;
+        background: linear-gradient(180deg, rgba(10,34,56,.92), rgba(7,26,46,.92)) !important;
+        color: var(--cfds-text) !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+    }
+    .stButton button:hover, .stDownloadButton button:hover {
+        border-color: rgba(56,213,255,.85) !important;
+        color: var(--cfds-accent) !important;
+        transform: translateY(-1px);
+    }
+    div[data-testid="stBaseButton-primary"] button, button[kind="primary"], .stButton button[kind="primary"] {
+        background: linear-gradient(90deg, var(--cfds-accent), #70e6ff) !important;
+        color: #04111e !important;
+        border: 0 !important;
+    }
+    [data-testid="stFileUploader"] section {
+        background: rgba(10,34,56,.74) !important;
+        border: 1px dashed rgba(56,213,255,.42) !important;
+        border-radius: 18px !important;
+    }
+    [data-testid="stFileUploader"] small, [data-testid="stFileUploader"] p { color: var(--cfds-muted) !important; }
+    .stSelectbox div[data-baseweb="select"], .stRadio, .stCheckbox, .stSlider {
+        color: var(--cfds-text) !important;
+    }
+    div[data-baseweb="select"] > div {
+        background: rgba(10,34,56,.82) !important;
+        border-color: var(--cfds-border) !important;
+        border-radius: 12px !important;
+        color: var(--cfds-text) !important;
+    }
+    [data-testid="stTabs"] button {
+        color: var(--cfds-muted) !important;
+        font-weight: 800;
+    }
+    [data-testid="stTabs"] button[aria-selected="true"] {
+        color: var(--cfds-accent) !important;
+        border-bottom-color: var(--cfds-accent) !important;
+    }
+    [data-testid="stImage"] img {
+        border-radius: 14px;
+        border: 1px solid rgba(148,163,184,.22);
+        box-shadow: 0 14px 34px rgba(0,0,0,.22);
+        background: #ffffff;
+    }
+    .cfds-dock {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: .65rem;
+        margin: .7rem 0 .85rem 0;
+    }
+    .cfds-dock-card {
+        border: 1px solid var(--cfds-border);
+        background: rgba(13,42,69,.56);
+        border-radius: 16px;
+        padding: .65rem .7rem;
+    }
+    .cfds-dock-card b { color: var(--cfds-accent); display:block; margin-bottom:.15rem; }
+    .cfds-dock-card span { color: var(--cfds-muted); font-size:.82rem; }
     @media (max-width: 760px) {
         .block-container { padding-left: 0.55rem; padding-right: 0.55rem; }
-        .cfds-hero { border-radius: 16px; padding: 0.85rem; }
-        .cfds-hero p { font-size: 0.88rem; }
+        .cfds-hero { border-radius: 18px; padding: .9rem; }
+        .cfds-hero h1 { font-size: 1.48rem; letter-spacing: .035em; }
+        .cfds-hero p { font-size: .86rem; }
+        .cfds-dock { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+        .cfds-dock-card { padding: .55rem .6rem; }
         div[data-testid="stImage"] img { border-radius: 10px; }
     }
     </style>
@@ -904,15 +1057,27 @@ if "cfds_export_cache" not in st.session_state:
 st.markdown(
     """
     <div class="cfds-hero">
-      <h1>🚀 CanSat Flight Data Studio Web</h1>
-      <p>Mobile-optimized version: upload a flight log, generate key previews quickly, then download the full export ZIP.</p>
+      <div class="cfds-kicker">
+        <span class="cfds-chip">V12.56 HUD</span>
+        <span class="cfds-chip">Daedalus CFDS</span>
+        <span class="cfds-chip">iPhone Web</span>
+      </div>
+      <h1>CanSat Flight Data Studio</h1>
+      <p>Mobile Pro interface inspired by the V12.56 desktop control deck — selective graph generation, export center, and flight replay.</p>
+    </div>
+    <div class="cfds-dock">
+      <div class="cfds-dock-card"><b>01 Import</b><span>Upload CSV/XLSX log</span></div>
+      <div class="cfds-dock-card"><b>02 Generate</b><span>Choose graph pack</span></div>
+      <div class="cfds-dock-card"><b>03 Preview</b><span>Folder-based browser</span></div>
+      <div class="cfds-dock-card"><b>04 Export</b><span>ZIP / PNG / report</span></div>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 with st.sidebar:
-    st.header("CFDS Mobile Pro")
+    st.header("CFDS V12.56 Deck")
+    st.caption("Aerospace HUD skin • phone-first controls")
     mobile_fast = st.toggle("Mobile fast mode", value=True, help="Compressed previews, compact layout, and phone-first defaults.")
     preset_name = st.selectbox(
         "Graph preset",
@@ -950,7 +1115,7 @@ with st.sidebar:
 st.markdown(
     """
     <div class="cfds-card">
-    <b>Phone speed tip:</b> choose a preset first. Generating only Altitude + Velocity + CONOPS is much faster than building every graph family. Use Mobile Fast for field checks and Report Quality only for final files.
+    <b style="color:#38d5ff;">Mission workflow:</b> choose a preset first, then generate only the graph families needed for the current review. Mobile Fast is for field checks; Report Quality is for final exports.
     </div>
     """,
     unsafe_allow_html=True,
