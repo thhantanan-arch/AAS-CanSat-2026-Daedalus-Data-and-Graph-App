@@ -512,8 +512,19 @@ def _preview_image_bytes(png_bytes: bytes, show_full_png: bool, max_width: int =
         return png_bytes
 
 
+def _set_preview_folder(folder: str) -> None:
+    """Persist selected preview folder through Streamlit reruns."""
+    st.session_state["preview_selected_folder"] = folder
+
+
 def show_previews_from_payload(payload: dict, max_images: int, show_full_png: bool, show_all_folders: bool) -> None:
-    """Render preview images from cached bytes so folder switching works after reruns."""
+    """Render preview images from cached bytes using an iPhone-safe single view.
+
+    Earlier builds used Streamlit tabs plus a folder radio. On iPhone this felt like
+    the image did not change because any widget interaction reruns the script and
+    tabs/scroll position can visually reset. This version removes the tab dependency:
+    the selected folder preview is always rendered directly below the folder picker.
+    """
     png_items = payload.get("individual_pngs", []) or []
     if not png_items:
         st.warning("No PNG previews are available in the cached export. Try generating graphs again.")
@@ -529,55 +540,68 @@ def show_previews_from_payload(payload: dict, max_images: int, show_full_png: bo
 
     st.subheader("Preview browser")
     st.caption(
-        f"Generated {len(png_items)} PNG files. These previews are rendered from session memory, "
-        "so they remain visible after changing folders on iPhone."
+        f"Generated {len(png_items)} PNG files. Folder preview is loaded from session memory, "
+        "so switching folders does not depend on deleted temp files."
     )
 
-    tab_fast, tab_folder = st.tabs(["⚡ Fast preview", "📁 Folder browser"])
+    folders = sorted(by_folder.keys())
+    if not folders:
+        st.warning("No preview folders found.")
+        return
 
-    with tab_fast:
+    current_folder = st.session_state.get("preview_selected_folder", folders[0])
+    if current_folder not in folders:
+        current_folder = folders[0]
+        st.session_state["preview_selected_folder"] = current_folder
+
+    folder_labels = [f"{folder}  ({len(by_folder[folder])})" for folder in folders]
+    current_index = folders.index(current_folder)
+    selected_label = st.radio(
+        "Choose graph folder",
+        folder_labels,
+        index=current_index,
+        key="preview_graph_folder_radio_single_view",
+        horizontal=False,
+        help="Tap a folder. The selected folder preview appears immediately below this list.",
+    )
+    selected_folder = folders[folder_labels.index(selected_label)]
+    if selected_folder != st.session_state.get("preview_selected_folder"):
+        st.session_state["preview_selected_folder"] = selected_folder
+
+    folder_files = sorted(by_folder[selected_folder], key=lambda item: item[0])
+    st.markdown(f"### {selected_folder} preview")
+
+    if len(folder_files) <= 1:
+        folder_limit = len(folder_files)
+    else:
+        safe_key = hashlib.sha1(selected_folder.encode("utf-8")).hexdigest()[:10]
+        existing_key = f"folder_preview_limit_memory_{safe_key}"
+        default_limit = min(len(folder_files), max(1, min(max_images, 12)))
+        # If the number of files changes, clamp the remembered slider value.
+        if existing_key in st.session_state:
+            st.session_state[existing_key] = min(max(1, int(st.session_state[existing_key])), len(folder_files))
+        folder_limit = st.slider(
+            "Images from this folder",
+            min_value=1,
+            max_value=len(folder_files),
+            value=st.session_state.get(existing_key, default_limit),
+            step=1,
+            key=existing_key,
+        )
+
+    st.caption(f"Showing {folder_limit} of {len(folder_files)} images in {selected_folder}")
+    for rel_name, data in folder_files[:folder_limit]:
+        st.image(BytesIO(_preview_image_bytes(data, show_full_png)), caption=Path(rel_name).name, use_container_width=True)
+
+    with st.expander(f"⚡ Quick preview — first {min(max_images, len(png_items))} PNGs", expanded=False):
         visible = png_items[:max_images]
-        st.caption(f"Showing {len(visible)} of {len(png_items)} PNG files.")
+        st.caption("This is only a fast mixed preview. Use the folder picker above for reliable folder browsing on iPhone.")
         for rel_name, data in visible:
             st.image(BytesIO(_preview_image_bytes(data, show_full_png)), caption=rel_name, use_container_width=True)
 
-    with tab_folder:
-        folders = sorted(by_folder.keys())
-        folder_labels = [f"{folder}  ({len(by_folder[folder])})" for folder in folders]
-        current_folder = st.session_state.get("preview_selected_folder", folders[0])
-        if current_folder not in folders:
-            current_folder = folders[0]
-        selected_label = _safe_radio_choice(
-            "Choose graph folder",
-            folder_labels,
-            index=folders.index(current_folder),
-            key="preview_graph_folder_radio_memory",
-            help_text="Tap-only folder picker. Images are loaded from cached bytes, not deleted temp files.",
-        )
-        selected_folder = folders[folder_labels.index(selected_label)]
-        st.session_state["preview_selected_folder"] = selected_folder
-
-        folder_files = sorted(by_folder[selected_folder], key=lambda item: item[0])
-        if len(folder_files) <= 1:
-            folder_limit = len(folder_files)
-        else:
-            safe_key = hashlib.sha1(selected_folder.encode("utf-8")).hexdigest()[:10]
-            default_limit = min(len(folder_files), 12)
-            folder_limit = st.slider(
-                "Images from this folder",
-                min_value=1,
-                max_value=len(folder_files),
-                value=default_limit,
-                step=1,
-                key=f"folder_preview_limit_memory_{safe_key}",
-            )
-        st.caption(f"Showing {folder_limit} of {len(folder_files)} images in {selected_folder}")
-        for rel_name, data in folder_files[:folder_limit]:
-            st.image(BytesIO(_preview_image_bytes(data, show_full_png)), caption=Path(rel_name).name, use_container_width=True)
-
     if show_all_folders:
         with st.expander("Folder summary", expanded=False):
-            for folder in sorted(by_folder.keys()):
+            for folder in folders:
                 st.markdown(f"**{folder}** — {len(by_folder[folder])} images")
 
 
