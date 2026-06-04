@@ -1,0 +1,16 @@
+CFDS Web Export Feature Update
+
+เพิ่ม Export Center ในหน้าเว็บ:
+- Export full CFDS ZIP
+- Export PNG graphs only
+- Export diagnostics
+- Export flight report
+- Export normalized CSV
+- Download individual PNGs จากหน้าเว็บโดยตรง
+
+วิธีอัปเดตบน GitHub:
+1) อัปโหลด streamlit_app.py ไปทับไฟล์เดิม
+2) commit changes
+3) รอ Streamlit rebuild
+4) เปิดเว็บใหม่ แล้ว generate graphs
+5) ปุ่ม Export center จะขึ้นใต้ preview

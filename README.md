@@ -1,2 +1,3 @@
-# AAS-CanSat-2026-Daedalus-Data-and-Graph-App
-🚀 Daedalus CFDS — an iPhone-ready CanSat telemetry studio for selective graph generation, fast mobile preview, and export-ready flight reports.
+# CFDS v0.5.6 REPORT COLLAPSE NAV
+
+Makes report pages collapsible sub-choices under Flight Report in the sidebar.

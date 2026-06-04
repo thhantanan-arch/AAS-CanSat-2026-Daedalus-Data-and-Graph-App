@@ -1,0 +1,11 @@
+{
+  "project": "CFDS_v0_5_7_REPORT_IN_PAGE_SCROLL",
+  "base": "CFDS_v0_5_6_REPORT_COLLAPSE_NAV",
+  "fixes": [
+    "Removed expanding report subnavigation from sidebar",
+    "Moved all report sections into one Flight Report scroll page",
+    "Kept graph engine unchanged",
+    "Kept preview/output logic unchanged"
+  ],
+  "entrypoint": "run_app.py"
+}

@@ -1,0 +1,25 @@
+CFDS Mobile Pro Selective Export — code check report
+
+Checked files:
+- streamlit_app.py
+- run_worker.py
+- generate_all_cansat_graphs.py
+- log_normalizer.py
+
+Checks performed:
+1. Python AST parse: PASS
+2. compileall syntax compile: PASS
+3. Folder Browser regression test:
+   - folder with 1 PNG: PASS, no slider created
+   - folder with 2+ PNGs: PASS, slider created safely
+4. Quick Check worker test:
+   - altitude + velocity + CONOPS, fast mode: PASS
+   - exit code: 0
+   - generated PNG: 7
+   - generated SVG: 0 in fast mode
+
+Extra fix included:
+- Cache-hit path now uses st.rerun() instead of st.stop(), so cached export buttons can render instead of being hidden.
+
+Known note:
+- Full Export / Motion Pack can still take time on Streamlit Cloud because multi-axis graph generation is heavy.

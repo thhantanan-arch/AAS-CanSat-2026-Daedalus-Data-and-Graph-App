@@ -1,0 +1,20 @@
+CFDS Mobile Pro Export State Fix
+
+Issue fixed:
+- Export center folder/PNG sections could appear to disappear on iPhone after tapping another expander or download button.
+
+Root cause:
+- Streamlit download_button reruns the app by default.
+- Expanders can also reset/collapse during reruns, especially on mobile.
+
+Fix:
+- Added stable keys to every download button.
+- Added on_click="ignore" to download buttons so downloads do not trigger a full rerun.
+- Replaced the old export expanders with iPhone-safe selectboxes:
+  - Folder ZIP download selector
+  - Individual PNG download selector
+
+Recommended update files:
+- streamlit_app.py
+Optional:
+- EXPORT_STATE_FIX_NOTE_TH.txt

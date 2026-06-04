@@ -1,0 +1,6 @@
+CanSat Flight Data Studio v0.4.2 FINAL COMPAT
+Fixes:
+- Removed fillna(method=...) for pandas compatibility.
+- Removed pd.to_numeric(errors='ignore'); replaced with errors='coerce'.
+- Supports Excel/CSV input through run_worker.py normalization.
+- If old errors still appear, confirm VS Code opened this v0_4_2_FINAL_COMPAT folder.
